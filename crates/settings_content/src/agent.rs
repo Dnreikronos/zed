@@ -421,6 +421,22 @@ pub enum CustomAgentServerSettings {
         favorite_config_option_values: HashMap<String, Vec<String>>,
     },
     Registry {
+        /// Path to a custom binary to use instead of running the agent via npx.
+        ///
+        /// When set, the agent will be launched directly using this binary,
+        /// bypassing npx entirely. This is useful on systems where
+        /// Zed-managed Node.js cannot run (e.g. NixOS) or in enterprise
+        /// environments where npx is unavailable.
+        ///
+        /// Default: None
+        path: Option<PathBuf>,
+        /// Additional arguments to pass to the agent binary.
+        ///
+        /// Only used when `path` is set.
+        ///
+        /// Default: []
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
         /// Additional environment variables to pass to the agent.
         ///
         /// Default: {}
@@ -726,5 +742,85 @@ mod tests {
         let always_deny = terminal_rules.always_deny.as_ref().unwrap();
         assert_eq!(always_deny.0.len(), 1);
         assert_eq!(always_deny.0[0].pattern, "^rm\\s");
+    }
+
+    #[test]
+    fn test_registry_with_custom_path_deserializes() {
+        let json = serde_json::json!({
+            "type": "registry",
+            "path": "/nix/store/abc123/bin/claude",
+            "args": ["--stdio"]
+        });
+
+        let settings: CustomAgentServerSettings = serde_json::from_value(json).unwrap();
+        match settings {
+            CustomAgentServerSettings::Registry { path, args, .. } => {
+                assert_eq!(
+                    path,
+                    Some(PathBuf::from("/nix/store/abc123/bin/claude"))
+                );
+                assert_eq!(args, vec!["--stdio".to_string()]);
+            }
+            other => panic!("Expected Registry, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_registry_without_path_deserializes() {
+        let json = serde_json::json!({
+            "type": "registry"
+        });
+
+        let settings: CustomAgentServerSettings = serde_json::from_value(json).unwrap();
+        match settings {
+            CustomAgentServerSettings::Registry { path, args, .. } => {
+                assert_eq!(path, None);
+                assert!(args.is_empty());
+            }
+            other => panic!("Expected Registry, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_registry_with_path_and_env_deserializes() {
+        let json = serde_json::json!({
+            "type": "registry",
+            "path": "/usr/local/bin/claude",
+            "args": ["--stdio", "--verbose"],
+            "env": {
+                "CLAUDE_API_KEY": "test-key"
+            }
+        });
+
+        let settings: CustomAgentServerSettings = serde_json::from_value(json).unwrap();
+        match settings {
+            CustomAgentServerSettings::Registry {
+                path, args, env, ..
+            } => {
+                assert_eq!(path, Some(PathBuf::from("/usr/local/bin/claude")));
+                assert_eq!(args, vec!["--stdio".to_string(), "--verbose".to_string()]);
+                assert_eq!(env.get("CLAUDE_API_KEY"), Some(&"test-key".to_string()));
+            }
+            other => panic!("Expected Registry, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_registry_path_not_serialized_when_none() {
+        let settings = CustomAgentServerSettings::Registry {
+            path: None,
+            args: Vec::new(),
+            env: HashMap::default(),
+            default_mode: None,
+            default_model: None,
+            favorite_models: Vec::new(),
+            default_config_options: HashMap::default(),
+            favorite_config_option_values: HashMap::default(),
+        };
+
+        let json = serde_json::to_value(&settings).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(!obj.contains_key("args"), "empty args should be skipped");
+        assert!(!obj.contains_key("env"), "empty env should be skipped");
     }
 }

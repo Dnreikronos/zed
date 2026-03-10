@@ -480,7 +480,42 @@ impl AgentServerStore {
                         ),
                     );
                 }
-                CustomAgentServerSettings::Registry { env, .. } => {
+                CustomAgentServerSettings::Registry {
+                    path: custom_path,
+                    args: custom_args,
+                    env,
+                    ..
+                } => {
+                    let agent_name = ExternalAgentServerName(name.clone().into());
+
+                    if let Some(custom_path) = custom_path {
+                        let command = AgentServerCommand {
+                            path: PathBuf::from(custom_path),
+                            args: custom_args.clone(),
+                            env: if env.is_empty() {
+                                None
+                            } else {
+                                Some(env.clone())
+                            },
+                        };
+                        let registry_agent = registry_agents_by_id.get(name);
+                        self.external_agents.insert(
+                            agent_name.clone(),
+                            ExternalAgentEntry::new(
+                                Box::new(LocalCustomAgent {
+                                    command,
+                                    project_environment: project_environment.clone(),
+                                }) as Box<dyn ExternalAgentServer>,
+                                ExternalAgentSource::Registry,
+                                registry_agent
+                                    .and_then(|a| a.icon_path().cloned()),
+                                registry_agent
+                                    .map(|a| a.name().clone()),
+                            ),
+                        );
+                        continue;
+                    }
+
                     let Some(agent) = registry_agents_by_id.get(name) else {
                         if registry_store.is_some() {
                             log::debug!("Registry agent '{}' not found in ACP registry", name);
@@ -488,7 +523,6 @@ impl AgentServerStore {
                         continue;
                     };
 
-                    let agent_name = ExternalAgentServerName(name.clone().into());
                     match agent {
                         RegistryAgent::Binary(agent) => {
                             if !agent.supports_current_platform {
@@ -1578,6 +1612,14 @@ pub enum CustomAgentServerSettings {
         favorite_config_option_values: HashMap<String, Vec<String>>,
     },
     Registry {
+        /// Path to a custom binary, bypassing npx.
+        ///
+        /// Default: None
+        path: Option<PathBuf>,
+        /// Additional arguments when using a custom binary path.
+        ///
+        /// Default: []
+        args: Vec<String>,
         /// Additional environment variables to pass to the agent.
         ///
         /// Default: {}
@@ -1729,6 +1771,8 @@ impl From<settings::CustomAgentServerSettings> for CustomAgentServerSettings {
                 favorite_config_option_values,
             },
             settings::CustomAgentServerSettings::Registry {
+                path,
+                args,
                 env,
                 default_mode,
                 default_model,
@@ -1736,6 +1780,8 @@ impl From<settings::CustomAgentServerSettings> for CustomAgentServerSettings {
                 favorite_models,
                 favorite_config_option_values,
             } => CustomAgentServerSettings::Registry {
+                path,
+                args,
                 env,
                 default_mode,
                 default_model,

@@ -581,6 +581,8 @@ impl AgentRegistryPage {
                             let agent_servers = settings.agent_servers.get_or_insert_default();
                             agent_servers.entry(agent_id).or_insert_with(|| {
                                 settings::CustomAgentServerSettings::Registry {
+                                    path: None,
+                                    args: Vec::new(),
                                     default_mode: None,
                                     default_model: None,
                                     env: Default::default(),

@@ -219,3 +219,56 @@ fn resolve_extension_icon_path_returns_none_for_nonexistent() {
     );
     assert!(result.is_none(), "Nonexistent file should return None");
 }
+
+#[test]
+fn registry_settings_with_custom_path_converts_correctly() {
+    let settings = settings::CustomAgentServerSettings::Registry {
+        path: Some(PathBuf::from("/nix/store/abc123/bin/claude")),
+        args: vec!["--stdio".to_string()],
+        env: {
+            let mut env = std::collections::HashMap::default();
+            env.insert("KEY".to_string(), "value".to_string());
+            env
+        },
+        default_mode: None,
+        default_model: None,
+        favorite_models: Vec::new(),
+        default_config_options: std::collections::HashMap::default(),
+        favorite_config_option_values: std::collections::HashMap::default(),
+    };
+
+    let converted: CustomAgentServerSettings = settings.into();
+    match converted {
+        CustomAgentServerSettings::Registry {
+            path, args, env, ..
+        } => {
+            assert_eq!(path, Some(PathBuf::from("/nix/store/abc123/bin/claude")));
+            assert_eq!(args, vec!["--stdio".to_string()]);
+            assert_eq!(env.get("KEY"), Some(&"value".to_string()));
+        }
+        other => panic!("Expected Registry, got {:?}", other),
+    }
+}
+
+#[test]
+fn registry_settings_without_path_converts_correctly() {
+    let settings = settings::CustomAgentServerSettings::Registry {
+        path: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        default_mode: None,
+        default_model: None,
+        favorite_models: Vec::new(),
+        default_config_options: std::collections::HashMap::default(),
+        favorite_config_option_values: std::collections::HashMap::default(),
+    };
+
+    let converted: CustomAgentServerSettings = settings.into();
+    match converted {
+        CustomAgentServerSettings::Registry { path, args, .. } => {
+            assert_eq!(path, None);
+            assert!(args.is_empty());
+        }
+        other => panic!("Expected Registry, got {:?}", other),
+    }
+}
